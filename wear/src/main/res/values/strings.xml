@@ -1,0 +1,34 @@
+<resources>
+    <string name="app_name">Wear</string>
+    <string name="message">Watch face tapped</string>
+    <string name="my_digital_name">SunshineWatch</string>
+
+    <string name="digital_name">Sample Digital</string>
+    <string name="digital_background_color">Background color</string>
+    <string name="digital_config_name">Digital watch face configuration</string>
+    <string name="digital_am">AM</string>
+    <string name="digital_pm">PM</string>
+<array name="months">
+    <item name="1">Jan</item>
+    <item name="2">Feb</item>
+    <item name="3">Mar</item>
+    <item name="4">Apr</item>
+    <item name="5">May</item>
+    <item name="6">Jun</item>
+    <item name="7">Jul</item>
+    <item name="8">Aug</item>
+    <item name="9">Sep</item>
+    <item name="10">Oct</item>
+    <item name="11">Nov</item>
+    <item name="12">Dec</item>
+</array>
+    <array name="weekDay">
+        <item name="1">Mon</item>
+        <item name="2">Tue</item>
+        <item name="3">Wed</item>
+        <item name="4">Thu</item>
+        <item name="5">Fri</item>
+        <item name="6">Sat</item>
+        <item name="7">Sun</item>
+    </array>
+</resources>

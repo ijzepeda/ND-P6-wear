@@ -35,6 +35,12 @@ import com.example.android.sunshine.app.MainActivity;
 import com.example.android.sunshine.app.R;
 import com.example.android.sunshine.app.Utility;
 import com.example.android.sunshine.app.data.WeatherContract;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -48,6 +54,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.UUID;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 
@@ -62,6 +69,11 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
 
+    private static final String WEATHER_INFO_PATH = "/weather-info";
+    private static final String KEY_UUID = "uuid";
+    private static final String KEY_HIGH = "high";
+    private static final String KEY_LOW = "low";
+    private static final String KEY_WEATHER_ID = "weatherId";
 
     private static final String[] NOTIFY_WEATHER_PROJECTION = new String[] {
             WeatherContract.WeatherEntry.COLUMN_WEATHER_ID,
@@ -86,13 +98,23 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     public static final int LOCATION_STATUS_UNKNOWN = 3;
     public static final int LOCATION_STATUS_INVALID = 4;
 
+    private GoogleApiClient mGoogleApiClient;
+
     public SunshineSyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
+
+        if (mGoogleApiClient == null) {
+            mGoogleApiClient = new GoogleApiClient.Builder(context)
+//                    .addConnectionCallbacks(this)
+//                    .addOnConnectionFailedListener(this)
+                    .addApi(Wearable.API)
+                    .build();
+        }
     }
 
     @Override
     public void onPerformSync(Account account, Bundle extras, String authority, ContentProviderClient provider, SyncResult syncResult) {
-        Log.d(LOG_TAG, "Starting sync");
+        Log.d(LOG_TAG, "ndp6>>Starting sync");
         String locationQuery = Utility.getPreferredLocation(getContext());
 
         // These two need to be declared outside the try/catch
@@ -192,7 +214,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     private void getWeatherDataFromJson(String forecastJsonStr,
                                         String locationSetting)
             throws JSONException {
-
         // Now we have a String representing the complete forecast in JSON Format.
         // Fortunately parsing is easy:  constructor takes the JSON string and converts it
         // into an Object hierarchy for us.
@@ -328,6 +349,10 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_SHORT_DESC, description);
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID, weatherId);
 
+                if (i == 0) {
+                    sendWeatherInfoToWearable(high, low, weatherId);
+                }
+
                 cVVector.add(weatherValues);
             }
 
@@ -346,7 +371,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 updateWidgets();
                 notifyWeather();
             }
-            Log.d(LOG_TAG, "Sync Complete. " + cVVector.size() + " Inserted");
             setLocationStatus(getContext(), LOCATION_STATUS_OK);
 
         } catch (JSONException e) {
@@ -356,17 +380,49 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
         }
     }
 
+    public void sendWeatherInfoToWearable(double high, double low, int weatherId) {
+        Log.d(LOG_TAG, "ndp6>>Sending Weather data");
+
+        if (mGoogleApiClient == null) {
+            return;
+        }
+
+        mGoogleApiClient.connect();
+
+        PutDataMapRequest putDataMapRequest = PutDataMapRequest.create(WEATHER_INFO_PATH);
+
+        putDataMapRequest.getDataMap().putString(KEY_UUID, UUID.randomUUID().toString());
+        putDataMapRequest.getDataMap().putString(KEY_HIGH, Utility.formatTemperature(getContext(), high));
+        putDataMapRequest.getDataMap().putString(KEY_LOW, Utility.formatTemperature(getContext(), low));
+        putDataMapRequest.getDataMap().putInt(KEY_WEATHER_ID, weatherId);
+
+        PutDataRequest request = putDataMapRequest.asPutDataRequest();
+
+        Log.d(LOG_TAG, "High:" + high + ", Low:" + low + ", Condition ID: " + weatherId);
+
+        Wearable.DataApi.putDataItem(mGoogleApiClient, request)
+                .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
+                    @Override
+                    public void onResult(DataApi.DataItemResult dataItemResult) {
+                        if (!dataItemResult.getStatus().isSuccess()) {
+                            Log.d(LOG_TAG, "ndp6>>Failed to send weather data");
+                        } else {
+                            Log.d(LOG_TAG, "ndp6>>Successfully sent weather data");
+                        }
+                    }
+                });
+    }
+
     private void updateWidgets() {
         Context context = getContext();
-        // Setting the package ensures that only components in our app will receive the broadcast
         Intent dataUpdatedIntent = new Intent(ACTION_DATA_UPDATED)
                 .setPackage(context.getPackageName());
         context.sendBroadcast(dataUpdatedIntent);
     }
 
+
     private void notifyWeather() {
         Context context = getContext();
-        //checking the last update and notify if it' the first of the day
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         String displayNotificationsKey = context.getString(R.string.pref_enable_notifications_key);
         boolean displayNotifications = prefs.getBoolean(displayNotificationsKey,
@@ -378,14 +434,9 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             long lastSync = prefs.getLong(lastNotificationKey, 0);
 
             if (System.currentTimeMillis() - lastSync >= DAY_IN_MILLIS) {
-                // Last sync was more than 1 day ago, let's send a notification with the weather.
                 String locationQuery = Utility.getPreferredLocation(context);
-
                 Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithDate(locationQuery, System.currentTimeMillis());
-
-                // we'll query our contentProvider, as always
                 Cursor cursor = context.getContentResolver().query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null, null);
-
                 if (cursor.moveToFirst()) {
                     int weatherId = cursor.getInt(INDEX_WEATHER_ID);
                     double high = cursor.getDouble(INDEX_MAX_TEMP);
@@ -396,9 +447,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                     Resources resources = context.getResources();
                     int artResourceId = Utility.getArtResourceForWeatherCondition(weatherId);
                     String artUrl = Utility.getArtUrlForWeatherCondition(context, weatherId);
-
-                    // On Honeycomb and higher devices, we can retrieve the size of the large icon
-                    // Prior to that, we use a fixed size
                     @SuppressLint("InlinedApi")
                     int largeIconWidth = Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB
                             ? resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_width)
@@ -407,8 +455,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                     int largeIconHeight = Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB
                             ? resources.getDimensionPixelSize(android.R.dimen.notification_large_icon_height)
                             : resources.getDimensionPixelSize(R.dimen.notification_large_icon_default);
-
-                    // Retrieve the large icon
                     Bitmap largeIcon;
                     try {
                         largeIcon = Glide.with(context)
@@ -418,19 +464,13 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                                 .fitCenter()
                                 .into(largeIconWidth, largeIconHeight).get();
                     } catch (InterruptedException | ExecutionException e) {
-                        Log.e(LOG_TAG, "Error retrieving large icon from " + artUrl, e);
                         largeIcon = BitmapFactory.decodeResource(resources, artResourceId);
                     }
                     String title = context.getString(R.string.app_name);
-
-                    // Define the text of the forecast.
                     String contentText = String.format(context.getString(R.string.format_notification),
                             desc,
                             Utility.formatTemperature(context, high),
                             Utility.formatTemperature(context, low));
-
-                    // NotificationCompatBuilder is a very convenient way to build backward-compatible
-                    // notifications.  Just throw in some data.
                     NotificationCompat.Builder mBuilder =
                             new NotificationCompat.Builder(getContext())
                                     .setColor(resources.getColor(R.color.primary_light))
@@ -442,11 +482,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                     // Make something interesting happen when the user clicks on the notification.
                     // In this case, opening the app is sufficient.
                     Intent resultIntent = new Intent(context, MainActivity.class);
-
-                    // The stack builder object will contain an artificial back stack for the
-                    // started Activity.
-                    // This ensures that navigating backward from the Activity leads out of
-                    // your application to the Home screen.
                     TaskStackBuilder stackBuilder = TaskStackBuilder.create(context);
                     stackBuilder.addNextIntent(resultIntent);
                     PendingIntent resultPendingIntent =
@@ -458,7 +493,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
 
                     NotificationManager mNotificationManager =
                             (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
-                    // WEATHER_NOTIFICATION_ID allows you to update the notification later on.
                     mNotificationManager.notify(WEATHER_NOTIFICATION_ID, mBuilder.build());
 
                     //refreshing last sync

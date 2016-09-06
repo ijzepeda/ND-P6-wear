@@ -17,6 +17,8 @@ package com.example.android.sunshine.app;
 
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
@@ -28,6 +30,8 @@ import android.preference.PreferenceManager;
 import android.support.design.widget.AppBarLayout;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.LoaderManager;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.NotificationManagerCompat;
 import android.support.v4.content.CursorLoader;
 import android.support.v4.content.Loader;
 import android.support.v4.view.ViewCompat;
@@ -43,10 +47,13 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.AbsListView;
+import android.widget.Button;
 import android.widget.TextView;
 
 import com.example.android.sunshine.app.data.WeatherContract;
 import com.example.android.sunshine.app.sync.SunshineSyncAdapter;
+
+import static com.example.android.sunshine.app.gcm.MyGcmListenerService.NOTIFICATION_ID;
 
 /**
  * Encapsulates fetching the forecast and displaying it as a {@link android.support.v7.widget.RecyclerView} layout.
@@ -247,10 +254,32 @@ public class ForecastFragment extends Fragment implements LoaderManager.LoaderCa
         }
 
         mForecastAdapter.setUseTodayLayout(mUseTodayLayout);
-
+//        Button button=(Button)rootView.findViewById(R.id.button3);
+//        button.setOnClickListener(new View.OnClickListener() {
+//            @Override
+//            public void onClick(View view) {
+//                showNotification(view);
+//            }
+//        });
         return rootView;
     }
 
+
+    private static final int NOTIFICATION_REQUEST_CODE = 1;
+    public void showNotification(View view) {
+        Notification notification = new NotificationCompat.Builder(getActivity())
+                .setContentTitle("Title")
+                .setContentText("Text")
+                .setSmallIcon(R.drawable.ic_logo)
+//                .addAction(R.drawable.ic_rain,
+//                        "LaunchActivity",
+//                        PendingIntent.getActivity(this, NOTIFICATION_REQUEST_CODE,
+//                                new Intent(this, MainActivity.class),
+//                                PendingIntent.FLAG_UPDATE_CURRENT))
+                .build();
+        NotificationManagerCompat.from(getActivity()).notify(NOTIFICATION_ID, notification);
+//        finish();
+    }
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         // We hold for transition here just in-case the activity
